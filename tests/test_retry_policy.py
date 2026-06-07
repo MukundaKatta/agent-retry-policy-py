@@ -1,14 +1,24 @@
 """Tests for agent-retry-policy-py."""
+
 import pytest
-from agent_retry_policy import RetryPolicy, RetryExhausted, RetryAttempt, exponential, fixed, no_retry
+from agent_retry_policy import (
+    RetryPolicy,
+    RetryExhausted,
+    RetryAttempt,
+    exponential,
+    fixed,
+    no_retry,
+)
 
 
 def test_success_first_attempt():
     policy = RetryPolicy(max_attempts=3)
     calls = []
+
     def fn():
         calls.append(1)
         return "ok"
+
     assert policy.execute(fn) == "ok"
     assert len(calls) == 1
 
@@ -16,19 +26,23 @@ def test_success_first_attempt():
 def test_retries_on_failure_then_succeeds():
     policy = RetryPolicy(max_attempts=3, base_delay=0, jitter=False)
     calls = []
+
     def fn():
         calls.append(1)
         if len(calls) < 3:
             raise ValueError("not yet")
         return "done"
+
     assert policy.execute(fn) == "done"
     assert len(calls) == 3
 
 
 def test_raises_retry_exhausted():
     policy = RetryPolicy(max_attempts=2, base_delay=0, jitter=False)
+
     def fn():
         raise RuntimeError("always fails")
+
     with pytest.raises(RetryExhausted) as exc_info:
         policy.execute(fn)
     assert exc_info.value.attempts == 2
@@ -37,24 +51,30 @@ def test_raises_retry_exhausted():
 
 def test_on_retry_callback():
     attempts_seen = []
+
     def on_retry(attempt: RetryAttempt):
         attempts_seen.append(attempt.attempt)
 
     policy = RetryPolicy(max_attempts=3, base_delay=0, jitter=False, on_retry=on_retry)
+
     def fn():
         raise IOError("fail")
+
     with pytest.raises(RetryExhausted):
         policy.execute(fn)
     assert attempts_seen == [1, 2]
 
 
 def test_retryable_filter():
-    policy = RetryPolicy(max_attempts=3, base_delay=0, jitter=False,
-                         retryable=(ValueError,))
+    policy = RetryPolicy(
+        max_attempts=3, base_delay=0, jitter=False, retryable=(ValueError,)
+    )
     calls = []
+
     def fn():
         calls.append(1)
         raise TypeError("not retryable")
+
     with pytest.raises(TypeError):
         policy.execute(fn)
     assert len(calls) == 1  # no retries
@@ -107,9 +127,11 @@ def test_presets_no_retry():
     p = no_retry()
     assert p.max_attempts == 1
     calls = []
+
     def fn():
         calls.append(1)
         raise RuntimeError("fail")
+
     with pytest.raises(RetryExhausted) as exc_info:
         p.execute(fn)
     assert exc_info.value.attempts == 1
@@ -118,17 +140,20 @@ def test_presets_no_retry():
 
 def test_execute_with_args():
     policy = RetryPolicy(max_attempts=1)
+
     def add(a, b):
         return a + b
+
     assert policy.execute(add, 3, b=4) == 7
 
 
 @pytest.mark.asyncio
 async def test_execute_async_success():
-    import asyncio
     policy = RetryPolicy(max_attempts=3, base_delay=0, jitter=False)
+
     async def fn():
         return "async_ok"
+
     result = await policy.execute_async(fn)
     assert result == "async_ok"
 
@@ -137,11 +162,13 @@ async def test_execute_async_success():
 async def test_execute_async_retries():
     policy = RetryPolicy(max_attempts=3, base_delay=0, jitter=False)
     calls = []
+
     async def fn():
         calls.append(1)
         if len(calls) < 2:
             raise ValueError("try again")
         return "done"
+
     result = await policy.execute_async(fn)
     assert result == "done"
     assert len(calls) == 2

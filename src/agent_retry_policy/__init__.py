@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import time
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Type
 
 
 class RetryExhausted(Exception):
     """Raised when all retry attempts are exhausted."""
+
     def __init__(self, attempts: int, last_error: Exception) -> None:
         self.attempts = attempts
         self.last_error = last_error
@@ -58,7 +59,7 @@ class RetryPolicy:
 
     def delay_for(self, attempt: int) -> float:
         """Calculate delay for the given attempt number (0-indexed)."""
-        d = min(self.base_delay * (self.backoff ** attempt), self.max_delay)
+        d = min(self.base_delay * (self.backoff**attempt), self.max_delay)
         if self.jitter:
             d = random.uniform(0, d)
         return d
@@ -75,7 +76,9 @@ class RetryPolicy:
                     break
                 wait = self.delay_for(attempt)
                 if self.on_retry:
-                    self.on_retry(RetryAttempt(attempt=attempt + 1, error=exc, wait_seconds=wait))
+                    self.on_retry(
+                        RetryAttempt(attempt=attempt + 1, error=exc, wait_seconds=wait)
+                    )
                 if wait > 0:
                     time.sleep(wait)
         raise RetryExhausted(self.max_attempts, last_error)  # type: ignore[arg-type]
@@ -87,6 +90,7 @@ class RetryPolicy:
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             return self.execute(fn, *args, **kwargs)
+
         return wrapper
 
     # ------------------------------------------------------------------
@@ -95,6 +99,7 @@ class RetryPolicy:
 
     async def execute_async(self, fn: Callable, *args: Any, **kwargs: Any) -> Any:
         import asyncio
+
         last_error: Exception | None = None
         for attempt in range(self.max_attempts):
             try:
@@ -105,7 +110,9 @@ class RetryPolicy:
                     break
                 wait = self.delay_for(attempt)
                 if self.on_retry:
-                    self.on_retry(RetryAttempt(attempt=attempt + 1, error=exc, wait_seconds=wait))
+                    self.on_retry(
+                        RetryAttempt(attempt=attempt + 1, error=exc, wait_seconds=wait)
+                    )
                 if wait > 0:
                     await asyncio.sleep(wait)
         raise RetryExhausted(self.max_attempts, last_error)  # type: ignore[arg-type]
@@ -116,6 +123,7 @@ class RetryPolicy:
         @functools.wraps(fn)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             return await self.execute_async(fn, *args, **kwargs)
+
         return wrapper
 
 
@@ -123,14 +131,19 @@ class RetryPolicy:
 # Presets
 # ------------------------------------------------------------------
 
+
 def exponential(max_attempts: int = 3, base_delay: float = 1.0) -> RetryPolicy:
     """Exponential backoff with jitter."""
-    return RetryPolicy(max_attempts=max_attempts, base_delay=base_delay, backoff=2.0, jitter=True)
+    return RetryPolicy(
+        max_attempts=max_attempts, base_delay=base_delay, backoff=2.0, jitter=True
+    )
 
 
 def fixed(max_attempts: int = 3, delay: float = 1.0) -> RetryPolicy:
     """Fixed delay between retries."""
-    return RetryPolicy(max_attempts=max_attempts, base_delay=delay, backoff=1.0, jitter=False)
+    return RetryPolicy(
+        max_attempts=max_attempts, base_delay=delay, backoff=1.0, jitter=False
+    )
 
 
 def no_retry() -> RetryPolicy:
@@ -138,4 +151,11 @@ def no_retry() -> RetryPolicy:
     return RetryPolicy(max_attempts=1, base_delay=0)
 
 
-__all__ = ["RetryPolicy", "RetryAttempt", "RetryExhausted", "exponential", "fixed", "no_retry"]
+__all__ = [
+    "RetryPolicy",
+    "RetryAttempt",
+    "RetryExhausted",
+    "exponential",
+    "fixed",
+    "no_retry",
+]
