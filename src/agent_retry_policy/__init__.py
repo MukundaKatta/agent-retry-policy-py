@@ -49,6 +49,14 @@ class RetryPolicy:
         retryable: tuple[Type[Exception], ...] = (Exception,),
         on_retry: Callable[[RetryAttempt], None] | None = None,
     ) -> None:
+        if max_attempts < 1:
+            raise ValueError(
+                f"max_attempts must be >= 1, got {max_attempts}"
+            )
+        if base_delay < 0:
+            raise ValueError(f"base_delay must be >= 0, got {base_delay}")
+        if max_delay < 0:
+            raise ValueError(f"max_delay must be >= 0, got {max_delay}")
         self.max_attempts = max_attempts
         self.base_delay = base_delay
         self.backoff = backoff
@@ -58,7 +66,13 @@ class RetryPolicy:
         self.on_retry = on_retry
 
     def delay_for(self, attempt: int) -> float:
-        """Calculate delay for the given attempt number (0-indexed)."""
+        """Return the backoff delay (seconds) for a 0-indexed attempt number.
+
+        The base delay is ``base_delay * backoff ** attempt`` capped at
+        ``max_delay``. When ``jitter`` is enabled the result is a uniformly
+        random value in ``[0, delay]`` ("full jitter"), which spreads
+        retries out and avoids thundering-herd behaviour.
+        """
         d = min(self.base_delay * (self.backoff**attempt), self.max_delay)
         if self.jitter:
             d = random.uniform(0, d)
@@ -81,7 +95,8 @@ class RetryPolicy:
                     )
                 if wait > 0:
                     time.sleep(wait)
-        raise RetryExhausted(self.max_attempts, last_error)  # type: ignore[arg-type]
+        assert last_error is not None  # guaranteed by max_attempts >= 1
+        raise RetryExhausted(self.max_attempts, last_error) from last_error
 
     def wrap(self, fn: Callable) -> Callable:
         """Decorator that applies this policy to a function."""
@@ -98,6 +113,12 @@ class RetryPolicy:
     # ------------------------------------------------------------------
 
     async def execute_async(self, fn: Callable, *args: Any, **kwargs: Any) -> Any:
+        """Execute an async ``fn`` with retries.
+
+        Mirrors :meth:`execute` but awaits ``fn`` and sleeps with
+        ``asyncio.sleep`` between attempts. Raises :class:`RetryExhausted`
+        when all attempts fail.
+        """
         import asyncio
 
         last_error: Exception | None = None
@@ -115,9 +136,11 @@ class RetryPolicy:
                     )
                 if wait > 0:
                     await asyncio.sleep(wait)
-        raise RetryExhausted(self.max_attempts, last_error)  # type: ignore[arg-type]
+        assert last_error is not None  # guaranteed by max_attempts >= 1
+        raise RetryExhausted(self.max_attempts, last_error) from last_error
 
     def wrap_async(self, fn: Callable) -> Callable:
+        """Decorator that applies this policy to an async function."""
         import functools
 
         @functools.wraps(fn)
